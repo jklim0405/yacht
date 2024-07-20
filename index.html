@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Yacht!</title>
+    <link rel="icon" href="logo.png">
+    <link rel="stylesheet" href="https://pyscript.net/latest/pyscript.css">
+    <script defer src="https://pyscript.net/latest/pyscript.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+        }
+        .container {
+            width: 1200px;
+            margin: 0 auto;
+            text-align: center;
+        }
+        .dice {
+            display: flex;
+            justify-content: center;
+            margin-top: 20px;
+        }
+        .dice div {
+            font-size: 32px;
+            width: 50px;
+            height: 50px;
+            line-height: 50px;
+            border: 2px solid black;
+            margin: 0 10px;
+            cursor: pointer;
+        }
+        .score-table {
+            width: 250px;
+            background-color: lightgray;
+            padding: 10px;
+            border-radius: 10px;
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            overflow-y: auto;
+        }
+        #score-table-p1 {
+            left: 0;
+        }
+        #score-table-p2 {
+            right: 0;
+        }
+        .score-table table {
+            width: 100%;
+        }
+        .score-table th, .score-table td {
+            text-align: left;
+            padding: 5px;
+        }
+        .score-entry {
+            font-size: 16px;
+            padding: 10px;
+            border: 2px dashed blue;
+            cursor: pointer;
+            background-color: lightyellow;
+            text-align: center;
+        }
+        #total-score {
+            font-size: 24px;
+            margin-top: 20px;
+        }
+        button {
+            font-size: 16px;
+            padding: 10px 20px;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Yacht Game</h1>
+        <div id="round">Round: 1</div>
+        <div id="player">Player: 1</div>
+        <div class="dice" id="dice-container"></div>
+        <button id="roll-button">Roll Dice</button>
+        <div id="total-score">Total Score: 0 : 0</div>
+        <div class="score-table" id="score-table-p1">
+            <h2>Player 1</h2>
+            <table>
+                <tr><th>Categories</th><th>Score</th></tr>
+                <!-- Score rows will be added by Python -->
+            </table>
+        </div>
+        <div class="score-table" id="score-table-p2">
+            <h2>Player 2</h2>
+            <table>
+                <tr><th>Categories</th><th>Score</th></tr>
+                <!-- Score rows will be added by Python -->
+            </table>
+        </div>
+    </div>
+    <audio id="roll-dice-sound" src="roll_dice.wav"></audio>
+    <audio id="toggle-dice-sound" src="toggle_dice.wav"></audio>
+    <audio id="set-score-sound" src="set_score.mp3"></audio>
+    <py-script>
+        import random
+
+        from js import document, console, window
+
+        # 게임 상태 변수 초기화
+        current_round = 1
+        current_player = 1
+        roll_count = 0
+        max_rolls = 3
+
+        dice_values = [0] * 5
+        dice_fixed = [False] * 5
+
+        categories = ["Aces", "Deuces", "Threes", "Fours", "Fives", "Sixes",
+                      "Choice", "4 of a Kind", "Full House", "S. Straight", "L. Straight", "Yacht"]
+
+        score_p1 = [""] * 12
+        score_p2 = [""] * 12
+
+        def update_labels():
+            document.getElementById("round").innerText = f"Round: {current_round}"
+            document.getElementById("player").innerText = f"Player: {current_player}"
+            total_p1 = sum(int(score) if score.isdigit() else 0 for score in score_p1)
+            total_p2 = sum(int(score) if score.isdigit() else 0 for score in score_p2)
+            document.getElementById("total-score").innerText = f"Total Score: {total_p1} : {total_p2}"
+
+        def create_score_table(player_id):
+            table = document.getElementById(player_id).getElementsByTagName('table')[0]
+            for idx, category in enumerate(categories):
+                row = table.insertRow()
+                cell1 = row.insertCell(0)
+                cell2 = row.insertCell(1)
+                cell1.innerText = category
+                cell2.innerText = ""
+                cell2.id = f"{player_id}-{idx}"
+                cell2.classList.add("score-entry")
+                cell2.onclick = lambda e, idx=idx, player_id=player_id: set_score(idx, player_id)
+                cell2.onmouseover = lambda e, idx=idx, player_id=player_id: preview_score(e, idx, player_id)
+                cell2.onmouseout = lambda e: clear_preview_score(e)
+
+        def roll_dice(event=None):
+            global roll_count
+            if roll_count < max_rolls:
+                for i in range(5):
+                    if not dice_fixed[i]:
+                        dice_values[i] = random.randint(1, 6)
+                roll_count += 1
+                update_dice_display()
+                play_sound("roll-dice-sound")
+
+        def toggle_dice_fix(idx):
+            dice_fixed[idx] = not dice_fixed[idx]
+            update_dice_display()
+            play_sound("toggle-dice-sound")
+
+        def update_dice_display():
+            dice_container = document.getElementById("dice-container")
+            dice_container.innerHTML = ""
+            for idx, value in enumerate(dice_values):
+                die = document.createElement("div")
+                die.innerText = value if value else ""
+                die.style.backgroundColor = "yellow" if dice_fixed[idx] else "white"
+                die.onclick = lambda e, idx=idx: toggle_dice_fix(idx)
+                dice_container.appendChild(die)
+
+        def set_score(idx, player_id):
+            global current_round, current_player, roll_count, dice_values, dice_fixed
+
+            if player_id == "score-table-p1" and current_player == 1 or player_id == "score-table-p2" and current_player == 2:
+                score_label = document.getElementById(f"{player_id}-{idx}")
+                # 빈 칸이거나 미리보기 중일 때 점수 입력
+                if score_label.innerText == "" or score_label.style.color == "gray":
+                    score_label.innerText = calculate_score(idx)
+                    score_label.style.color = "black"
+                    if player_id == "score-table-p1":
+                        score_p1[idx] = score_label.innerText
+                    else:
+                        score_p2[idx] = score_label.innerText
+                    end_round()
+                    play_sound("set-score-sound")
+
+        def preview_score(event, idx, player_id):
+            if player_id == "score-table-p1" and current_player == 1 or player_id == "score-table-p2" and current_player == 2:
+                score_label = document.getElementById(f"{player_id}-{idx}")
+                if not score_label.innerText:
+                    score_label.innerText = calculate_score(idx)
+                    score_label.style.color = "gray"
+
+        def clear_preview_score(event):
+            score_label = event.target
+            if score_label.style.color == "gray":
+                score_label.innerText = ""
+                score_label.style.color = "black"
+
+        def calculate_score(idx):
+            category = categories[idx]
+            if category == "Aces":
+                return str(dice_values.count(1))
+            elif category == "Deuces":
+                return str(dice_values.count(2) * 2)
+            elif category == "Threes":
+                return str(dice_values.count(3) * 3)
+            elif category == "Fours":
+                return str(dice_values.count(4) * 4)
+            elif category == "Fives":
+                return str(dice_values.count(5) * 5)
+            elif category == "Sixes":
+                return str(dice_values.count(6) * 6)
+            elif category == "Choice":
+                return str(sum(dice_values))
+            elif category == "4 of a Kind":
+                for value in set(dice_values):
+                    if dice_values.count(value) >= 4:
+                        return str(sum(dice_values))
+                return "0"
+            elif category == "Full House":
+                unique_values = set(dice_values)
+                if len(unique_values) == 2 and (dice_values.count(list(unique_values)[0]) in [2, 3]):
+                    return str(sum(dice_values))
+                return "0"
+            elif category == "S. Straight":
+                if set([1, 2, 3, 4]).issubset(dice_values) or set([2, 3, 4, 5]).issubset(dice_values) or set([3, 4, 5, 6]).issubset(dice_values):
+                    return "15"
+                return "0"
+            elif category == "L. Straight":
+                if set([1, 2, 3, 4, 5]) == set(dice_values) or set([2, 3, 4, 5, 6]) == set(dice_values):
+                    return "30"
+                return "0"
+            elif category == "Yacht":
+                if len(set(dice_values)) == 1 and dice_values[0] != 0:
+                    return "50"
+                return "0"
+            return "0"
+
+        def end_round():
+            global current_round, current_player, roll_count, dice_values, dice_fixed
+
+            if current_player == 2 and current_round == 12:
+                final_score_p1 = sum(int(score) if score.isdigit() else 0 for score in score_p1)
+                final_score_p2 = sum(int(score) if score.isdigit() else 0 for score in score_p2)
+                winner = "Player 1 wins!" if final_score_p1 > final_score_p2 else "Player 2 wins!" if final_score_p1 < final_score_p2 else "It's a tie!"
+                window.alert(f"Game over! {winner}\n{final_score_p1} : {final_score_p2}")
+                reset_game()
+            else:
+                current_player = 1 if current_player == 2 else 2
+                if current_player == 1:
+                    current_round += 1
+                roll_count = 0
+                dice_values = [0] * 5
+                dice_fixed = [False] * 5
+                update_labels()
+                update_dice_display()
+
+        def reset_game():
+            global current_round, current_player, roll_count, dice_values, dice_fixed, score_p1, score_p2
+
+            current_round = 1
+            current_player = 1
+            roll_count = 0
+            dice_values = [0] * 5
+            dice_fixed = [False] * 5
+            score_p1 = [""] * 12
+            score_p2 = [""] * 12
+            update_labels()
+            update_dice_display()
+            for i in range(12):
+                document.getElementById(f"score-table-p1-{i}").innerText = ""
+                document.getElementById(f"score-table-p2-{i}").innerText = ""
+
+        def play_sound(sound_id):
+            sound = document.getElementById(sound_id).cloneNode(True)
+            sound.play()
+
+        # 게임 초기화
+        create_score_table("score-table-p1")
+        create_score_table("score-table-p2")
+        update_labels()
+        update_dice_display()
+
+        # 이벤트 리스너
+        document.getElementById("roll-button").onclick = roll_dice
+    </py-script>
+</body>
+</html>
